@@ -1,0 +1,8 @@
+# Generated artifacts — normalize.py rebuilds these fresh from raw snapshots
+# + listing_metadata_v2.tsv on every run, so they don't need to be tracked.
+dashboard/data.json
+dashboard/index.html
+data/normalized/*.csv
+
+# OS cruft
+.DS_Store

@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Delhi Airbnb Occupancy Monitor</title>
+<style>
+  :root{
+    --bg:#0b0f14; --panel:#12181f; --panel2:#171f28; --border:#243040;
+    --text:#e8edf2; --muted:#8a97a6; --accent:#4da3ff;
+    --avail:#1f6f4a; --unavail:#b0392f; --checkout:#c98a2b; --empty:#232b35;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:13px}
+  header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px}
+  header h1{font-size:17px;margin:0;font-weight:600}
+  header .sub{color:var(--muted);font-size:12px;margin-top:2px}
+  .stats{display:flex;gap:18px}
+  .stat{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:8px 14px;text-align:center;min-width:70px}
+  .stat .n{font-size:18px;font-weight:700;color:var(--accent)}
+  .stat .l{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}
+  .toolbar{padding:10px 20px;border-bottom:1px solid var(--border);display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:var(--panel)}
+  .toolbar input, .toolbar select{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px}
+  .toolbar input[type=text]{width:220px}
+  .toolbar label{color:var(--muted);font-size:11px;display:flex;align-items:center;gap:6px}
+  .legend{display:flex;gap:14px;margin-left:auto;font-size:11px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .sw{width:11px;height:11px;border-radius:2px;display:inline-block}
+  main{display:flex;height:calc(100vh - 112px)}
+  #gridWrap{flex:1;overflow:auto;position:relative;background:var(--bg)}
+  #labelsCol{position:sticky;left:0;z-index:2;background:var(--bg)}
+  #dateHeader{position:sticky;top:0;z-index:3;background:var(--bg);border-bottom:1px solid var(--border)}
+  canvas{display:block}
+  #detail{width:340px;border-left:1px solid var(--border);background:var(--panel);overflow-y:auto;padding:18px;flex-shrink:0}
+  #detail h2{font-size:15px;margin:0 0 4px}
+  #detail .meta{color:var(--muted);font-size:12px;margin-bottom:14px;line-height:1.5}
+  #detail .empty{color:var(--muted);font-size:12px;margin-top:40px;text-align:center}
+  .curve{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px}
+  .curve .box{background:var(--panel2);border:1px solid var(--border);border-radius:7px;padding:8px;text-align:center}
+  .curve .box .v{font-size:16px;font-weight:700}
+  .curve .box .k{font-size:10px;color:var(--muted);text-transform:uppercase}
+  #miniCal{display:grid;grid-template-columns:repeat(10,1fr);gap:3px;margin-top:6px}
+  #miniCal div{aspect-ratio:1;border-radius:2px}
+  .rowlabel{font-size:11px;padding:0 8px;height:16px;line-height:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.03)}
+  .rowlabel:hover{background:var(--panel2)}
+  .rowlabel .price{color:var(--muted);float:right;padding-left:6px}
+  #tooltip{position:fixed;background:#1c2632;border:1px solid var(--border);border-radius:6px;padding:6px 9px;font-size:11px;pointer-events:none;display:none;z-index:10;max-width:260px}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Delhi Airbnb Occupancy Monitor</h1>
+    <div class="sub" id="subline">—</div>
+  </div>
+  <div class="stats">
+    <div class="stat"><div class="n" id="statCount">—</div><div class="l">Listings</div></div>
+    <div class="stat"><div class="n" id="stat30">—</div><div class="l">Avg 30d busy</div></div>
+    <div class="stat"><div class="n" id="stat7">—</div><div class="l">Avg 7d busy</div></div>
+  </div>
+</header>
+<div class="toolbar">
+  <input type="text" id="search" placeholder="Search title or location…">
+  <select id="roomType"><option value="">All room types</option></select>
+  <select id="geo"><option value="">All locations</option></select>
+  <select id="sortBy">
+    <option value="busy_desc">Sort: busiest (30d) first</option>
+    <option value="busy_asc">Sort: most available (30d) first</option>
+    <option value="price_desc">Sort: price high → low</option>
+    <option value="price_asc">Sort: price low → high</option>
+    <option value="rating_desc">Sort: rating high → low</option>
+    <option value="reviews_desc">Sort: most reviewed</option>
+    <option value="title">Sort: title A → Z</option>
+  </select>
+  <label><input type="checkbox" id="showCheckout"> highlight checkout-only days</label>
+  <label><input type="checkbox" id="superhostOnly"> Superhost only</label>
+  <div class="legend">
+    <span><i class="sw" style="background:var(--avail)"></i>Available</span>
+    <span><i class="sw" style="background:var(--unavail)"></i>Unavailable</span>
+    <span><i class="sw" style="background:var(--checkout)"></i>Checkout only</span>
+  </div>
+</div>
+<main>
+  <div id="gridWrap">
+    <canvas id="dateHeader"></canvas>
+    <canvas id="heatmap"></canvas>
+  </div>
+  <div id="detail"><div class="empty">Click any row or cell in the heatmap<br>to see listing detail here.</div></div>
+</main>
+<div id="tooltip"></div>
+
+<script id="data-blob" type="application/json">__AIRBNB_DATA_JSON__</script>
+<script>
+const RAW = JSON.parse(document.getElementById('data-blob').textContent);
+const LABEL_W = 260, CELL_W = 7, CELL_H = 16, HEADER_H = 26;
+
+document.getElementById('subline').textContent =
+  `Snapshot ${RAW.snapshot_date} · generated ${RAW.generated_at} · next 90 days`;
+
+// populate room type + location filters
+const roomTypes = [...new Set(RAW.listings.map(l => l.room_type).filter(Boolean))].sort();
+const rtSel = document.getElementById('roomType');
+roomTypes.forEach(rt => { const o=document.createElement('option'); o.value=rt; o.textContent=rt; rtSel.appendChild(o); });
+
+// locations are like "Sahibzada Ajit Singh Nagar, Punjab, India" — bucket by the
+// first segment (the actual city/area name) so the dropdown stays short.
+function geoBucket(loc){ return (loc||'').split(',')[0].trim() || 'Unknown'; }
+const geos = [...new Set(RAW.listings.map(l => geoBucket(l.location)))].sort();
+const geoSel = document.getElementById('geo');
+geos.forEach(g => { const o=document.createElement('option'); o.value=g; o.textContent=g; geoSel.appendChild(o); });
+
+function priceNum(p){ if(!p) return 0; const n = parseFloat(p.replace(/[^0-9.]/g,'')); return isNaN(n)?0:n; }
+function busy30(l){ const v = l.occupancy_curve && l.occupancy_curve['30']; return v==null?0:v; }
+function busy7(l){ const v = l.occupancy_curve && l.occupancy_curve['7']; return v==null?0:v; }
+
+let filtered = RAW.listings.slice();
+let selectedId = null;
+
+function applyFilters(){
+  const q = document.getElementById('search').value.trim().toLowerCase();
+  const rt = rtSel.value;
+  const geo = geoSel.value;
+  const superOnly = document.getElementById('superhostOnly').checked;
+  filtered = RAW.listings.filter(l => {
+    if(rt && l.room_type !== rt) return false;
+    if(geo && geoBucket(l.location) !== geo) return false;
+    if(superOnly && !l.is_superhost) return false;
+    if(q && !(l.title.toLowerCase().includes(q) || l.location.toLowerCase().includes(q))) return false;
+    return true;
+  });
+  const sortBy = document.getElementById('sortBy').value;
+  const cmp = {
+    busy_desc: (a,b)=>busy30(b)-busy30(a),
+    busy_asc: (a,b)=>busy30(a)-busy30(b),
+    price_desc: (a,b)=>priceNum(b.price)-priceNum(a.price),
+    price_asc: (a,b)=>priceNum(a.price)-priceNum(b.price),
+    rating_desc: (a,b)=>(b.rating||0)-(a.rating||0),
+    reviews_desc: (a,b)=>(b.reviews||0)-(a.reviews||0),
+    title: (a,b)=>a.title.localeCompare(b.title),
+  }[sortBy];
+  filtered.sort(cmp);
+
+  document.getElementById('statCount').textContent = filtered.length;
+  const avg = arr => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(0)+'%' : '—';
+  document.getElementById('stat30').textContent = avg(filtered.map(busy30));
+  document.getElementById('stat7').textContent = avg(filtered.map(busy7));
+
+  draw();
+}
+
+const dateHeaderCv = document.getElementById('dateHeader');
+const heatCv = document.getElementById('heatmap');
+const gridWrap = document.getElementById('gridWrap');
+const dhCtx = dateHeaderCv.getContext('2d');
+const hCtx = heatCv.getContext('2d');
+
+function dayColor(day, highlightCheckout){
+  if(!day) return getComputedStyle(document.documentElement).getPropertyValue('--empty');
+  if(!day.available){
+    if(highlightCheckout && day.checkout) return getComputedStyle(document.documentElement).getPropertyValue('--checkout');
+    return getComputedStyle(document.documentElement).getPropertyValue('--unavail');
+  }
+  return getComputedStyle(document.documentElement).getPropertyValue('--avail');
+}
+
+function draw(){
+  const nDays = 90;
+  const width = LABEL_W + nDays*CELL_W;
+  const height = filtered.length * CELL_H;
+
+  dateHeaderCv.width = width; dateHeaderCv.height = HEADER_H;
+  dateHeaderCv.style.width = width+'px'; dateHeaderCv.style.height = HEADER_H+'px';
+  heatCv.width = width; heatCv.height = Math.max(height,1);
+  heatCv.style.width = width+'px'; heatCv.style.height = height+'px';
+
+  // header: month/day ticks
+  dhCtx.fillStyle = '#12181f'; dhCtx.fillRect(0,0,width,HEADER_H);
+  dhCtx.fillStyle = '#8a97a6'; dhCtx.font = '10px -apple-system,sans-serif';
+  const first = filtered[0];
+  if(first && first.days.length){
+    let lastMonth = '';
+    first.days.forEach((d,i)=>{
+      const dt = new Date(d.date+'T00:00:00');
+      const mon = dt.toLocaleString('en-US',{month:'short'});
+      if(i===0 || dt.getDate()===1){
+        dhCtx.fillText(mon, LABEL_W + i*CELL_W, 12);
+      }
+      if(dt.getDate()%7===0){
+        dhCtx.fillText(dt.getDate(), LABEL_W + i*CELL_W, 24);
+      }
+    });
+  }
+
+  hCtx.clearRect(0,0,width,height);
+  const highlightCheckout = document.getElementById('showCheckout').checked;
+
+  filtered.forEach((l, row) => {
+    const y = row*CELL_H;
+    // row label background
+    hCtx.fillStyle = l.id===selectedId ? '#1c2f45' : (row%2===0 ? '#0e1319' : '#0b0f14');
+    hCtx.fillRect(0, y, LABEL_W, CELL_H);
+    hCtx.fillStyle = '#e8edf2';
+    hCtx.font = '11px -apple-system,sans-serif';
+    const star = l.is_superhost ? '★ ' : '';
+    const label = star + (l.title.length>26 ? l.title.slice(0,25)+'…' : l.title);
+    hCtx.fillText(label, 8, y+11);
+    hCtx.fillStyle = '#8a97a6';
+    hCtx.textAlign = 'right';
+    hCtx.fillText((l.nightly_price ? l.nightly_price+'/nt' : (l.price||'')), LABEL_W-8, y+11);
+    hCtx.textAlign = 'left';
+
+    // cells
+    for(let c=0;c<nDays;c++){
+      const day = l.days[c];
+      hCtx.fillStyle = dayColor(day, highlightCheckout);
+      hCtx.fillRect(LABEL_W + c*CELL_W, y+1, CELL_W-1, CELL_H-2);
+    }
+  });
+}
+
+function showDetail(listing){
+  selectedId = listing.id;
+  const c = listing.occupancy_curve || {};
+  const fmt = v => v==null ? '—' : v+'%';
+  let mini = '';
+  listing.days.slice(0,60).forEach(d=>{
+    const col = !d.available ? (d.checkout? 'var(--checkout)':'var(--unavail)') : 'var(--avail)';
+    mini += `<div style="background:${col}" title="${d.date}"></div>`;
+  });
+  const ratingStr = listing.rating ? `★ ${listing.rating} (${listing.reviews||0} reviews)` : 'No rating yet';
+  const facts = [
+    listing.guests ? listing.guests+' guests' : null,
+    listing.bedrooms ? listing.bedrooms+' bed' + (listing.bedrooms>1?'rooms':'room') : null,
+    listing.beds ? listing.beds+' bed'+(listing.beds>1?'s':'') : null,
+    listing.baths ? (typeof listing.baths==='number' ? listing.baths+' bath'+(listing.baths>1?'s':'') : listing.baths) : null,
+  ].filter(Boolean).join(' · ');
+  const nightly = listing.nightly_price ? `${listing.nightly_price}/night` : '';
+  const superBadge = listing.is_superhost ? ' <span style="color:#c98a2b">★ Superhost</span>' : '';
+  document.getElementById('detail').innerHTML = `
+    <h2>${listing.title}</h2>
+    <div class="meta">
+      ${listing.location}<br>
+      ${listing.property_type || listing.room_type}${facts ? ' · '+facts : ''}<br>
+      ${nightly ? nightly+' · ' : ''}${listing.price} ${listing.price_qualifier||''}<br>
+      ${ratingStr}<br>
+      Hosted by ${listing.host_name||'—'}${superBadge}<br>
+      ${listing.url ? `<a href="${listing.url}" target="_blank" style="color:var(--accent)">View on Airbnb ↗</a><br>` : ''}
+      <span style="opacity:.6">ID ${listing.id}</span>
+    </div>
+    <div class="curve">
+      <div class="box"><div class="v">${fmt(c['7'])}</div><div class="k">7 days</div></div>
+      <div class="box"><div class="v">${fmt(c['14'])}</div><div class="k">14 days</div></div>
+      <div class="box"><div class="v">${fmt(c['30'])}</div><div class="k">30 days</div></div>
+      <div class="box"><div class="v">${fmt(c['45'])}</div><div class="k">45 days</div></div>
+      <div class="box"><div class="v">${fmt(c['60'])}</div><div class="k">60 days</div></div>
+      <div class="box"><div class="v">${fmt(c['90'])}</div><div class="k">90 days</div></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:4px">Next 60 days</div>
+    <div id="miniCal">${mini}</div>
+  `;
+  draw();
+}
+
+heatCv.addEventListener('click', e=>{
+  const rect = heatCv.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  const row = Math.floor(y / CELL_H);
+  if(row<0 || row>=filtered.length) return;
+  showDetail(filtered[row]);
+});
+heatCv.addEventListener('mousemove', e=>{
+  const rect = heatCv.getBoundingClientRect();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  const row = Math.floor(y / CELL_H);
+  const tip = document.getElementById('tooltip');
+  if(row<0 || row>=filtered.length || x < LABEL_W){ tip.style.display='none'; return; }
+  const col = Math.floor((x-LABEL_W)/CELL_W);
+  const l = filtered[row]; const d = l.days[col];
+  if(!d){ tip.style.display='none'; return; }
+  tip.style.display='block';
+  tip.style.left = (e.clientX+12)+'px';
+  tip.style.top = (e.clientY+12)+'px';
+  tip.innerHTML = `<b>${l.title}</b><br>${d.date} — ${d.available?'Available':(d.checkout?'Checkout only':'Unavailable')}`;
+});
+heatCv.addEventListener('mouseleave', ()=>{ document.getElementById('tooltip').style.display='none'; });
+
+['search','roomType','geo','sortBy','showCheckout','superhostOnly'].forEach(id=>{
+  document.getElementById(id).addEventListener('input', applyFilters);
+  document.getElementById(id).addEventListener('change', applyFilters);
+});
+
+applyFilters();
+</script>
+</body>
+</html>
