@@ -1,5 +1,7 @@
 # Delhi Airbnb Occupancy Monitor
 
+GitHub: [Reppin123/airbnb-occupancy-monitor](https://github.com/Reppin123/airbnb-occupancy-monitor) (private).
+
 Daily-refreshable occupancy intelligence for a ~1,249-listing Delhi-NCR
 Airbnb portfolio (Chandigarh / Mohali / Panchkula / Zirakpur area). Pulls
 each listing's forward availability calendar straight from Airbnb's own
