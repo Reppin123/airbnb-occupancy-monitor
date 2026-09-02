@@ -23,7 +23,7 @@ entirely. Zero ongoing cost, zero third-party token.
 listing_ids.txt (1,249 Airbnb listing IDs, Delhi portfolio)
         |
         v
-[1] FETCH   — airbnb-calendar-fetch/run.py
+[1] FETCH   — fetch/run.py
     Live Chrome session -> Airbnb's StaysPdpAtomicAvailabilityCalendarQuery
     GraphQL endpoint -> raw per-listing JSON, one file per listing,
     written to ~/Downloads/airbnb_snapshots/<snapshot_date>/<id>.json
@@ -45,29 +45,36 @@ listing_ids.txt (1,249 Airbnb listing IDs, Delhi portfolio)
     drawer (occupancy curve, rating, host, direct Airbnb link).
 ```
 
-The **fetch** step (step 1) is a reusable Apprentice workflow and lives
-outside this repo, at:
+The **fetch** step (step 1) now ships in this repo under `fetch/`
+(`run.py`, `listing_ids.txt`), so anyone who clones this repo can run
+the exact same 1,249-listing scrape end to end with no separate setup —
+just Chrome, no Apify account, no API token. It's also kept as a
+reusable Apprentice workflow locally, at:
 ```
 ~/Library/Application Support/Apprentice-dev/workflows/airbnb-calendar-fetch/
 ```
-(`run.py`, `workflow.md`, `listing_ids.txt`). This repo (`scripts/normalize.py`
-onward) is the project-specific downstream half: turning those raw
-snapshots into something a person actually looks at.
+That local copy is the day-to-day one Apprentice runs on a schedule;
+`fetch/` in this repo is the public, reproducible copy. This repo's
+`scripts/normalize.py` onward is the project-specific downstream half:
+turning those raw snapshots into something a person actually looks at.
 
 ## How to run it
 
-**1. Fetch today's calendars** (from the workflow folder above):
+**1. Fetch today's calendars:**
 ```bash
-cd ~/Library/Application\ Support/Apprentice-dev/workflows/airbnb-calendar-fetch
-/opt/homebrew/bin/uv run --script run.py \
+cd fetch
+uv run --script run.py \
     --ids-file listing_ids.txt \
     --out-dir ~/Downloads/airbnb_snapshots \
     --months 3 --pace 1.0
 ```
 Requires Google Chrome open with "Allow JavaScript from Apple Events"
-enabled (System Settings > Privacy & Security > Automation). Resumable —
-safe to re-run; it skips any listing ID already fetched for today.
-Full 1,249-listing run takes roughly 45–60 minutes at the default pace.
+enabled (System Settings > Privacy & Security > Automation). No Airbnb
+login or token needed — the script rides Chrome's own same-origin
+session. Resumable — safe to re-run; it skips any listing ID already
+fetched for today. Full 1,249-listing run takes roughly 30–60 minutes
+at the default pace. Swap in your own `listing_ids.txt` (one Airbnb
+listing ID per line) to point this at a different portfolio.
 
 **2. Normalize + rebuild the dashboard:**
 ```bash
